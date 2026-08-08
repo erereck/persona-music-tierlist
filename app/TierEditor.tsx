@@ -14,11 +14,15 @@ import {
   ArchiveRestore,
   Check,
   ChevronDown,
+  ChevronRight,
   ChevronUp,
   Download,
   FileDown,
   FileUp,
   ImageDown,
+  Pencil,
+  Pin,
+  PinOff,
   Plus,
   Redo2,
   RotateCcw,
@@ -165,6 +169,9 @@ export function TierEditor() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [cardSize, setCardSize] = useState(152);
   const [libraryOpen, setLibraryOpen] = useState(true);
+  const [libraryPinned, setLibraryPinned] = useState(false);
+  const [collapsedTiers, setCollapsedTiers] = useState<Set<string>>(new Set());
+  const [editingTierId, setEditingTierId] = useState<string | null>(null);
   const [targetTier, setTargetTier] = useState(DEFAULT_TIERS[0].id);
   const [toast, setToast] = useState("");
   const [ready, setReady] = useState(false);
@@ -185,6 +192,14 @@ export function TierEditor() {
             if (parsed.tiers?.length && parsed.board) setState(parsed);
           } catch { /* mantém o estado inicial */ }
         }
+        const savedView = localStorage.getItem("persona-music-tierlist-view-v1");
+        if (savedView) {
+          try {
+            const view = JSON.parse(savedView) as { libraryPinned?: boolean; collapsedTiers?: string[] };
+            setLibraryPinned(Boolean(view.libraryPinned));
+            setCollapsedTiers(new Set(view.collapsedTiers ?? []));
+          } catch { /* mantém a visualização inicial */ }
+        }
         setReady(true);
       });
   }, []);
@@ -193,6 +208,14 @@ export function TierEditor() {
     if (!ready) return;
     localStorage.setItem("persona-music-tierlist-v2", JSON.stringify(state));
   }, [state, ready]);
+
+  useEffect(() => {
+    if (!ready) return;
+    localStorage.setItem("persona-music-tierlist-view-v1", JSON.stringify({
+      libraryPinned,
+      collapsedTiers: [...collapsedTiers],
+    }));
+  }, [collapsedTiers, libraryPinned, ready]);
 
   useEffect(() => {
     if (!toast) return;
@@ -378,7 +401,19 @@ export function TierEditor() {
       delete next.board[id];
       return next;
     });
+    setCollapsedTiers((items) => {
+      const next = new Set(items);
+      next.delete(id);
+      return next;
+    });
   };
+
+  const toggleTier = (id: string) => setCollapsedTiers((items) => {
+    const next = new Set(items);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    return next;
+  });
 
   if (!ready) return (
     <main className="loading-screen">
@@ -390,7 +425,7 @@ export function TierEditor() {
   const progress = Math.round((rankedIds.size / Math.max(tracks.length, 1)) * 100);
 
   return (
-    <main className="app-shell" style={{ "--card-width": `${cardSize}px` } as React.CSSProperties}>
+    <main className={`app-shell ${libraryPinned ? "has-pinned-library" : ""} ${libraryPinned && !libraryOpen ? "has-collapsed-pool" : ""}`} style={{ "--card-width": `${cardSize}px` } as React.CSSProperties}>
       <header className="topbar">
         <div className="brand-lockup">
           <span className="brand-kicker"><Sparkles size={14} /> Velvet Rank Protocol</span>
@@ -475,32 +510,64 @@ export function TierEditor() {
           <div className="export-title"><span>PERSONA MUSIC ARCHIVE</span><b>{rankedIds.size} FAIXAS CLASSIFICADAS</b></div>
           {state.tiers.map((tier, tierIndex) => {
             const ids = state.board[tier.id] ?? [];
+            const isCollapsed = collapsedTiers.has(tier.id);
             return (
               <div
-                className="tier-row"
+                className={`tier-row ${isCollapsed ? "is-collapsed" : ""}`}
                 key={tier.id}
                 onDragOver={(event) => event.preventDefault()}
                 onDrop={(event) => { event.preventDefault(); moveTracks(draggedIds.current, tier.id); }}
               >
                 <div className="tier-label" style={{ "--tier-color": tier.color } as React.CSSProperties}>
                   <div className="tier-number">{tierIndex === 9 ? "0" : tierIndex + 1}</div>
-                  <input value={tier.label} onChange={(event) => updateTier(tier.id, { label: event.target.value })} aria-label={`Nome da categoria ${tierIndex + 1}`} />
+                  {editingTierId === tier.id ? (
+                    <textarea
+                      autoFocus
+                      rows={2}
+                      value={tier.label}
+                      onChange={(event) => updateTier(tier.id, { label: event.target.value })}
+                      onBlur={() => setEditingTierId(null)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Escape") {
+                          event.currentTarget.blur();
+                        }
+                      }}
+                      aria-label={`Nome da categoria ${tierIndex + 1}`}
+                    />
+                  ) : (
+                    <button
+                      className="tier-collapse-toggle"
+                      onClick={() => toggleTier(tier.id)}
+                      aria-expanded={!isCollapsed}
+                      aria-label={`${isCollapsed ? "Mostrar" : "Esconder"} categoria ${tier.label}`}
+                    >
+                      {isCollapsed ? <ChevronRight /> : <ChevronDown />}
+                      <span className="tier-title">{tier.label}</span>
+                    </button>
+                  )}
                   <span>{ids.length} faixa{ids.length === 1 ? "" : "s"}</span>
                   <div className="tier-controls">
                     <input type="color" value={tier.color} onChange={(event) => updateTier(tier.id, { color: event.target.value })} aria-label="Cor da categoria" />
+                    <button onClick={() => setEditingTierId(tier.id)} aria-label="Editar nome da categoria"><Pencil /></button>
                     <button onClick={() => moveTier(tier.id, -1)} disabled={tierIndex === 0} aria-label="Mover categoria para cima"><ChevronUp /></button>
                     <button onClick={() => moveTier(tier.id, 1)} disabled={tierIndex === state.tiers.length - 1} aria-label="Mover categoria para baixo"><ChevronDown /></button>
                     <button onClick={() => removeTier(tier.id)} aria-label="Remover categoria"><Trash2 /></button>
                   </div>
                   {selected.size > 0 && <button className="drop-selected" onClick={() => moveTracks([...selected], tier.id)}>+ {selected.size}</button>}
                 </div>
-                <div className={`tier-content ${ids.length ? "" : "is-empty"}`}>
-                  {!ids.length && <span>Arraste músicas para cá</span>}
-                  {ids.map((id) => {
-                    const track = trackById.get(id);
-                    if (!track) return null;
-                    return <TrackCard key={id} track={track} selected={selected.has(id)} compact onToggle={() => toggleSelected(id)} onDragStart={(event) => startDrag(id, event)} onDropBefore={(event) => { event.preventDefault(); event.stopPropagation(); moveTracks(draggedIds.current, tier.id, id); }} />;
-                  })}
+                <div className={`tier-content ${ids.length ? "" : "is-empty"} ${isCollapsed ? "is-hidden" : ""}`}>
+                  {isCollapsed ? (
+                    <span className="collapsed-summary">Conteúdo oculto · {ids.length} faixa{ids.length === 1 ? "" : "s"}</span>
+                  ) : (
+                    <>
+                      {!ids.length && <span>Arraste músicas para cá</span>}
+                      {ids.map((id) => {
+                        const track = trackById.get(id);
+                        if (!track) return null;
+                        return <TrackCard key={id} track={track} selected={selected.has(id)} compact onToggle={() => toggleSelected(id)} onDragStart={(event) => startDrag(id, event)} onDropBefore={(event) => { event.preventDefault(); event.stopPropagation(); moveTracks(draggedIds.current, tier.id, id); }} />;
+                      })}
+                    </>
+                  )}
                 </div>
               </div>
             );
@@ -508,7 +575,7 @@ export function TierEditor() {
         </div>
       </section>
 
-      <section className={`library-section ${libraryOpen ? "" : "is-collapsed"}`}>
+      <section className={`library-section ${libraryOpen ? "" : "is-collapsed"} ${libraryPinned ? "is-pinned" : ""}`}>
         <div className="library-heading">
           <button className="library-toggle" onClick={() => setLibraryOpen(!libraryOpen)} aria-expanded={libraryOpen}>
             <div><span className="eyebrow">Acervo não classificado</span><h2>Biblioteca <em>{unranked.length}</em></h2></div>
@@ -516,7 +583,10 @@ export function TierEditor() {
           </button>
           <div className="library-actions">
             <span>{visibleUnranked.length} visíveis</span>
-            <button onClick={selectVisible} disabled={!visibleUnranked.length}>Selecionar visíveis</button>
+            <button className={`pin-library ${libraryPinned ? "active" : ""}`} onClick={() => setLibraryPinned(!libraryPinned)} aria-pressed={libraryPinned} title={libraryPinned ? "Soltar pool" : "Manter pool sempre visível"}>
+              {libraryPinned ? <PinOff size={14} /> : <Pin size={14} />} {libraryPinned ? "Soltar pool" : "Fixar pool"}
+            </button>
+            <button className="select-visible" onClick={selectVisible} disabled={!visibleUnranked.length}>Selecionar visíveis</button>
             <select value={sort} onChange={(event) => setSort(event.target.value as "archive" | "title")} aria-label="Ordenação da biblioteca">
               <option value="archive">Ordem dos jogos</option>
               <option value="title">Título A–Z</option>
