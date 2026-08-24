@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - scripts/apply-known-english-track-titles.mjs
+      - scripts/apply-known-english-track-titles-fix.mjs
       - .github/workflows/apply-known-english-track-titles.yml
 
 permissions:
@@ -23,7 +24,9 @@ jobs:
         with:
           node-version: 22
       - name: Apply translations
-        run: node scripts/apply-known-english-track-titles.mjs
+        run: |
+          node scripts/apply-known-english-track-titles.mjs
+          node scripts/apply-known-english-track-titles-fix.mjs
       - name: Commit updated track titles
         run: |
           if git diff --quiet -- public/tracks.json; then
